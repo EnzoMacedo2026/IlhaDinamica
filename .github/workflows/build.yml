@@ -13,6 +13,16 @@ jobs:
       - name: Baixar o código
         uses: actions/checkout@v4
 
+      - name: Descompactar o zip do projeto
+        run: |
+          ZIP=$(find . -maxdepth 2 -iname "*.zip" -print -quit)
+          if [ -n "$ZIP" ]; then
+            echo "Descompactando $ZIP"
+            unzip -q -o "$ZIP" -d projeto
+          else
+            echo "Nenhum zip encontrado, usando os arquivos do repositório"
+          fi
+
       - name: Instalar o JDK 17
         uses: actions/setup-java@v4
         with:
@@ -30,7 +40,7 @@ jobs:
       - name: Compilar o APK de debug
         run: |
           set -e
-          SETTINGS=$(find . -maxdepth 3 -name settings.gradle -print -quit)
+          SETTINGS=$(find . -maxdepth 4 -name settings.gradle -print -quit)
           if [ -z "$SETTINGS" ]; then
             echo "settings.gradle não encontrado. Arquivos do repositório:"
             ls -la
@@ -52,6 +62,4 @@ jobs:
       - name: Enviar o APK
         uses: actions/upload-artifact@v4
         with:
-          name: IlhaDinamica-debug
-          path: "**/build/outputs/apk/debug/*.apk"
-          if-no-files-found: error
+          name: Ilh
