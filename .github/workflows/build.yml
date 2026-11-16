@@ -59,7 +59,11 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Enviar o APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ilh
+      
+          - name: Enviar o APK
+                  uses: actions/upload-artifact@v4
+                  with:
+                  name: APK-IlhaDinamica
+                   path: app/build/outputs/apk/debug/app-debug.apk
+                   if-no-files-found: error
+
