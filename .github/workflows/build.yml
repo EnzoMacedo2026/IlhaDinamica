@@ -19,8 +19,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar o Android SDK
-        uses: android-actions/setup-android@v3
+      # O Android SDK já vem instalado no ubuntu-latest; só aceitamos as licenças
+      # e garantimos a plataforma 36.
+      - name: Preparar o Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Configurar o Gradle (com cache)
         uses: gradle/actions/setup-gradle@v4
