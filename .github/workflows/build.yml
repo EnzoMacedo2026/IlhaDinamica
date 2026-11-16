@@ -1,118 +1,84 @@
 
-name: Build APK - Ilha Dinâmica
+name: Compilar APK Android
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Gerar APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
+      - name: Baixar repositório
+        uses: actions/checkout@v4
 
-      - name: Descompactar ZIP do projeto
-        run: |
-          set -e
-
-          ZIP=$(find . -maxdepth 4 -type f -iname "*.zip" -not -path "*/.git/*" -print -quit)
-
-          if [ -n "$ZIP" ]; then
-            echo "Descompactando $ZIP"
-            mkdir -p projeto
-            unzip -q -o "$ZIP" -d projeto
-          else
-            echo "Usando arquivos do repositório"
-          fi
-
-      - name: Instalar JDK 17
-        uses: actions/setup-java@v5
+      - name: Preparar Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Preparar Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Instalar componentes Android
+        shell: bash
+        run: |
+          set -e
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Aceitar licenças Android
+        run: yes | sdkmanager --licenses || true
+
+      - name: Dar permissão ao Gradle
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Compilar APK
         shell: bash
         run: |
           set -e
 
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "::error::sdkmanager não encontrado"
+          if [ -f ./gradlew ]; then
+            ./gradlew assembleDebug --stacktrace
+          elif [ -f ./gradle/wrapper/gradle-wrapper.properties ]; then
+            gradle assembleDebug --stacktrace
+          else
+            echo "ERRO: Gradle Wrapper não encontrado."
             exit 1
           fi
 
-          chmod +x "$SDKMANAGER"
-
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-
-          "$SDKMANAGER" --install \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-      - name: Configurar Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Compilar APK
-        id: compile
+      - name: Localizar APK
+        id: apk
         shell: bash
         run: |
-          set -euo pipefail
-
-          SETTINGS=$(find . -maxdepth 10 -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            -not -path "*/.gradle/*" \
-            -not -path "*/build/*" \
-            -print -quit)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "::error::settings.gradle não encontrado"
-            exit 1
-          fi
-
-          ROOT="$(cd "$(dirname "$SETTINGS")" && pwd)"
-
-          echo "Projeto: $ROOT"
-
-          cd "$ROOT"
-
-          if [ ! -f gradlew ]; then
-            echo "::error::Gradle Wrapper não encontrado"
-            exit 1
-          fi
-
-          chmod +x gradlew
-
-          ./gradlew --no-daemon clean assembleDebug --stacktrace
-
-          APK=$(find "$ROOT" -type f \
-            -path '*/build/outputs/apk/debug/*.apk' \
-            -print -quit)
+          APK=$(find . -type f -name "*.apk" \
+            -path "*/build/outputs/apk/*" | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "::error::APK não encontrado"
+            echo "ERRO: Nenhum APK foi gerado."
             exit 1
           fi
 
-          APK_PATH=$(realpath --relative-to="$GITHUB_WORKSPACE" "$APK")
-
-          echo "APK encontrado: $APK_PATH"
-
-          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK encontrado: $APK"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: IlhaDinamica-APK
-          path: ${{ steps.compile.outputs.apk_path }}
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
-          retention-days: 7
