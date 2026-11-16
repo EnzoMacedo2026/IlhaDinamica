@@ -1,4 +1,5 @@
-name: Build APK
+
+name: Build APK - Ilha Dinâmica
 
 on:
   push:
@@ -6,64 +7,100 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
 
-      - name: Descompactar o zip do projeto
+      - name: Descompactar ZIP do projeto
+        shell: bash
         run: |
-          ZIP=$(find . -maxdepth 2 -iname "*.zip" -print -quit)
+          set -e
+
+          ZIP=$(find . -maxdepth 4 -type f -iname "*.zip" -not -path "*/.git/*" -print -quit)
+
           if [ -n "$ZIP" ]; then
             echo "Descompactando $ZIP"
+            mkdir -p projeto
             unzip -q -o "$ZIP" -d projeto
           else
-            echo "Nenhum zip encontrado, usando os arquivos do repositório"
+            echo "Nenhum ZIP encontrado. Usando arquivos do repositório."
           fi
 
-      - name: Instalar o JDK 17
+      - name: Instalar JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Preparar o Android SDK
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Configurar o Gradle (com cache)
+      - name: Instalar Android SDK 36
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compilar o APK de debug
+      - name: Compilar APK
+        id: compile
+        shell: bash
         run: |
-          set -e
-          SETTINGS=$(find . -maxdepth 4 -name settings.gradle -print -quit)
+          set -euo pipefail
+
+          SETTINGS=$(find . -maxdepth 10 -type f \
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -not -path "*/.gradle/*" \
+            -not -path "*/build/*" \
+            -print -quit)
+
           if [ -z "$SETTINGS" ]; then
-            echo "settings.gradle não encontrado. Arquivos do repositório:"
-            ls -la
+            echo "::error::Arquivo settings.gradle não encontrado."
+            find . -maxdepth 5 -type f | head -200
             exit 1
           fi
+
           ROOT="$(cd "$(dirname "$SETTINGS")" && pwd)"
-          echo "Projeto em: $ROOT"
+
+          echo "Projeto encontrado: $ROOT"
+
           cd "$ROOT"
+
           if [ ! -f gradlew ]; then
-            echo "gradlew ausente, gerando um novo"
-            mkdir /tmp/wrap && cd /tmp/wrap
-            gradle wrapper --gradle-version 8.14.3
-            cp -r gradlew gradlew.bat gradle "$ROOT"/
-            cd "$ROOT"
+            echo "::error::Gradle Wrapper não encontrado."
+            exit 1
           fi
+
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
 
-      
-          - name: Enviar o APK
-                  uses: actions/upload-artifact@v4
-                  with:
-                  name: APK-IlhaDinamica
-                   path: app/build/outputs/apk/debug/app-debug.apk
-                   if-no-files-found: error
+          ./gradlew --no-daemon clean assembleDebug --stacktrace
 
+          APK=$(find "$ROOT/app/build/outputs/apk/debug" \
+            -maxdepth 1 -type f -name "*.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "::error::APK não encontrado após compilação."
+            exit 1
+          fi
+
+          APK_PATH=$(realpath --relative-to="$GITHUB_WORKSPACE" "$APK")
+
+          echo "APK encontrado: $APK_PATH"
+
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Enviar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: IlhaDinamica-APK
+          path: ${{ steps.compile.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 7
