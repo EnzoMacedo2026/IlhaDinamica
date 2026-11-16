@@ -19,8 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # O Android SDK já vem instalado no ubuntu-latest; só aceitamos as licenças
-      # e garantimos a plataforma 36.
       - name: Preparar o Android SDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -31,6 +29,23 @@ jobs:
 
       - name: Compilar o APK de debug
         run: |
+          set -e
+          SETTINGS=$(find . -maxdepth 3 -name settings.gradle -print -quit)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle não encontrado. Arquivos do repositório:"
+            ls -la
+            exit 1
+          fi
+          ROOT="$(cd "$(dirname "$SETTINGS")" && pwd)"
+          echo "Projeto em: $ROOT"
+          cd "$ROOT"
+          if [ ! -f gradlew ]; then
+            echo "gradlew ausente, gerando um novo"
+            mkdir /tmp/wrap && cd /tmp/wrap
+            gradle wrapper --gradle-version 8.14.3
+            cp -r gradlew gradlew.bat gradle "$ROOT"/
+            cd "$ROOT"
+          fi
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
@@ -38,5 +53,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: IlhaDinamica-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
